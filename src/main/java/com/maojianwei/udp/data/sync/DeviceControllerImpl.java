@@ -10,10 +10,13 @@ import com.maojianwei.udp.data.sync.lib.Device;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
+import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.util.CharsetUtil;
 import io.netty.util.internal.SocketUtils;
@@ -56,16 +59,27 @@ public class DeviceControllerImpl implements DeviceController {
             }
 
             try {
+                UdpController controller = this;
                 Bootstrap b = new Bootstrap();
                 b.group(group)
                         .channel(NioDatagramChannel.class)
                         .option(ChannelOption.SO_BROADCAST, true)
-                        .handler(new UdpDataCodec(this))
-                        .handler(new UdpKaHandler(this));
+                        .handler(new ChannelInitializer<NioDatagramChannel>() {
+                            @Override
+                            protected void initChannel(NioDatagramChannel datagramChannel) {
+                                datagramChannel.pipeline()
+                                        .addLast(new UdpDataCodec(controller))
+                                        .addLast(new UdpKaHandler(controller));
+                            }
+                        });
 
                 Channel ch = b.bind(0).sync().channel();
 
-                int deviceId = (int) System.currentTimeMillis();
+//                ch.writeAndFlush(new DatagramPacket(
+//                        Unpooled.copiedBuffer("QOTM?", CharsetUtil.UTF_8),
+//                        SocketUtils.socketAddress("255.255.255.255", 7686))).sync();
+
+                int deviceId = (int) System.currentTimeMillis() & 0x000000ff;
                 localDevice = new LocalDevice(deviceId, ch);
                 msgId = new AtomicInteger(0);
 
@@ -124,7 +138,11 @@ public class DeviceControllerImpl implements DeviceController {
         UdpData udpMsg = new UdpData(deviceId, msgId.getAndIncrement(), msg);
         InetSocketAddress remoteAddr = remote.getAddr();
 
-        localDevice.getUdpChannel().writeAndFlush(new UdpPacket<UdpData>(udpMsg, remoteAddr));
+        try {
+            localDevice.getUdpChannel().writeAndFlush(UdpPacket.of(udpMsg, remoteAddr)).sync();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         return true;
     }
 
@@ -150,8 +168,10 @@ public class DeviceControllerImpl implements DeviceController {
         Device device = remoteDevices.getOrDefault(deviceId, null);
         if (device != null) {
             device.updateAddr(ipv4Addr);
+            System.out.println(String.format("id=%d ,update addr=%s", deviceId, ipv4Addr.toString()));
         } else {
             remoteDevices.put(deviceId, new Device(deviceId, ipv4Addr));
+            System.out.println(String.format("id=%d , addr=%s, up!", deviceId, ipv4Addr.toString()));
         }
     }
 

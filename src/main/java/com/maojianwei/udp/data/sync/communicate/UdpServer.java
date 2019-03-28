@@ -3,9 +3,11 @@ package com.maojianwei.udp.data.sync.communicate;
 import com.maojianwei.udp.data.sync.communicate.api.UdpController;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 
 import java.nio.charset.Charset;
@@ -24,10 +26,10 @@ public class UdpServer implements Runnable {
 
     @Override
     public void run() {
+        System.out.println(Charset.isSupported(UTF_8.name()));
+        System.out.println(Charset.defaultCharset());
         if (!checkUtf8Support()) {
             System.out.println("Fail to start UdpServer, system doesn't support utf-8, or defaultCharset is not utf-8.");
-            System.out.println(Charset.isSupported(UTF_8.name()));
-            System.out.println(Charset.defaultCharset());
             return;
         }
 
@@ -38,8 +40,15 @@ public class UdpServer implements Runnable {
             b.group(group)
                     .channel(NioDatagramChannel.class)
                     .option(ChannelOption.SO_BROADCAST, true)
-                    .handler(new UdpDataCodec(controllerPass))
-                    .handler(new UdpKaHandler(controllerPass));
+                    .option(ChannelOption.SO_REUSEADDR, true)
+                    .handler(new ChannelInitializer<NioDatagramChannel>() {
+                        @Override
+                        protected void initChannel(NioDatagramChannel datagramChannel) {
+                            datagramChannel.pipeline()
+                                    .addLast(new UdpDataCodec(controllerPass))
+                                    .addLast(new UdpKaHandler(controllerPass));
+                        }
+                    });
 
             listening = b.bind(DEFAULT_UDP_PORT).sync().channel();
             listening.closeFuture().await();

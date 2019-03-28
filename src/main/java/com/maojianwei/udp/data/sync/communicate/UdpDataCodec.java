@@ -20,7 +20,7 @@ import java.util.List;
 
 import static com.maojianwei.udp.data.sync.communicate.lib.UdpConst.UTF_8;
 
-public class UdpDataCodec extends MessageToMessageCodec<DatagramPacket, UdpPacket<UdpData>> {
+public class UdpDataCodec extends MessageToMessageCodec<DatagramPacket, UdpPacket> {
 
     private UdpController controller;
     public UdpDataCodec(UdpController udpController) {
@@ -28,7 +28,7 @@ public class UdpDataCodec extends MessageToMessageCodec<DatagramPacket, UdpPacke
     }
 
     @Override
-    protected void encode(ChannelHandlerContext ctx, UdpPacket<UdpData> pkt, List<Object> out) throws Exception {
+    protected void encode(ChannelHandlerContext ctx, UdpPacket pkt, List<Object> out) {
 
         ByteBuf buf = Unpooled.buffer();
         buf.writeInt(controller.getLocalDeviceId());
@@ -52,7 +52,7 @@ public class UdpDataCodec extends MessageToMessageCodec<DatagramPacket, UdpPacke
         InetSocketAddress sender = dgPkt.sender();
         InetSocketAddress recipient = dgPkt.recipient();
 
-        UdpPacket<UdpData> pkt = new UdpPacket<>(data, dgPkt.sender());
+        UdpPacket pkt = UdpPacket.of(data, dgPkt.sender());
 
         list.add(pkt);
     }

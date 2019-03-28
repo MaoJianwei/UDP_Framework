@@ -27,6 +27,8 @@ public class App
             int deviceId = Integer.valueOf(in.nextLine());
             if (deviceId == 0) {
                 break;
+            } else if (deviceId == 1) {
+                continue;
             }
             String msgToSend = in.nextLine();
             app.sendMsg(deviceId, msgToSend);

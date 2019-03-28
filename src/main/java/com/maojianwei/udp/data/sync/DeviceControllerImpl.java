@@ -1,6 +1,7 @@
 package com.maojianwei.udp.data.sync;
 
 import com.maojianwei.udp.data.sync.api.DeviceController;
+import com.maojianwei.udp.data.sync.communicate.UdpServer;
 import com.maojianwei.udp.data.sync.communicate.api.UdpController;
 import com.maojianwei.udp.data.sync.communicate.UdpDataCodec;
 import com.maojianwei.udp.data.sync.communicate.UdpKaHandler;
@@ -28,6 +29,8 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -38,6 +41,9 @@ public class DeviceControllerImpl implements DeviceController {
     private BlockingQueue<UdpData> comQueue;
     private Map<Integer, Device> remoteDevices;
 
+    private LocalDevice localDevice;
+
+    private UdpServer udpServer;
 
     public DeviceControllerImpl(BlockingQueue queue) {
         comQueue = queue;
@@ -46,66 +52,33 @@ public class DeviceControllerImpl implements DeviceController {
     }
 
 
-    private EventLoopGroup group;
-    private LocalDevice localDevice;
-    private AtomicInteger msgId;
-
     @Override
     public boolean initLocalDevice() {
 
         if (localDevice == null) {
-            if (group == null) {
-                group = new NioEventLoopGroup();
-            }
 
-            try {
-                UdpController controller = this;
-                Bootstrap b = new Bootstrap();
-                b.group(group)
-                        .channel(NioDatagramChannel.class)
-                        .option(ChannelOption.SO_BROADCAST, true)
-                        .handler(new ChannelInitializer<NioDatagramChannel>() {
-                            @Override
-                            protected void initChannel(NioDatagramChannel datagramChannel) {
-                                datagramChannel.pipeline()
-                                        .addLast(new UdpDataCodec(controller))
-                                        .addLast(new UdpKaHandler(controller));
-                            }
-                        });
+            localDevice = new LocalDevice((int) System.currentTimeMillis() & 0x000000ff);
+            udpServer = new UdpServer(this);
 
-                Channel ch = b.bind(0).sync().channel();
-
-//                ch.writeAndFlush(new DatagramPacket(
-//                        Unpooled.copiedBuffer("QOTM?", CharsetUtil.UTF_8),
-//                        SocketUtils.socketAddress("255.255.255.255", 7686))).sync();
-
-                int deviceId = (int) System.currentTimeMillis() & 0x000000ff;
-                localDevice = new LocalDevice(deviceId, ch);
-                msgId = new AtomicInteger(0);
-
-            } catch (InterruptedException e) {
-                System.out.println("DeviceControllerImpl - initLocalDevice - interrupted");
-                return false;
-            } catch (Exception e) {
-                e.printStackTrace();
-                System.out.println("DeviceControllerImpl - initLocalDevice - unknown Exception");
-                return false;
+            if (udpServer.start()) {
+                return true;
+            } else {
+                localDevice = null;
+                udpServer = null;
             }
         }
-        return true;
+        return false;
     }
 
     @Override
     public void releaseLocalDevice() {
         if (localDevice != null) {
-            localDevice.getUdpChannel().close();
+            udpServer.stop();
+            udpServer = null;
             localDevice = null;
         }
-        if (group != null) {
-            group.shutdownGracefully();
-            group = null;
-        }
     }
+
 
     @Override
     public Set<Device> getRemoteDevices() {
@@ -135,11 +108,11 @@ public class DeviceControllerImpl implements DeviceController {
             return false;
         }
 
-        UdpData udpMsg = new UdpData(deviceId, msgId.getAndIncrement(), msg);
+        UdpData udpMsg = new UdpData(deviceId, localDevice.getNextMsgId(), msg);
         InetSocketAddress remoteAddr = remote.getAddr();
 
         try {
-            localDevice.getUdpChannel().writeAndFlush(UdpPacket.of(udpMsg, remoteAddr)).sync();
+            udpServer.getLocalChannel().writeAndFlush(UdpPacket.of(udpMsg, remoteAddr)).sync();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -147,20 +120,25 @@ public class DeviceControllerImpl implements DeviceController {
     }
 
     private class LocalDevice {
-        private final int deviceId;
-        private final Channel udpChannel;
+        private final int localDeviceId;
+        private final AtomicInteger msgId;
 
-        private LocalDevice(int deviceId, Channel udpChannel) {
-            this.deviceId = deviceId;
-            this.udpChannel = udpChannel;
+        private LocalDevice(int deviceId) {
+            this.localDeviceId = deviceId;
+            this.msgId = new AtomicInteger(0);
         }
         private int getDeviceId() {
-            return deviceId;
+            return localDeviceId;
         }
-        private Channel getUdpChannel() {
-            return udpChannel;
+        private int getNextMsgId() {
+            return msgId.getAndIncrement();
         }
     }
+
+
+
+
+
 
 
     @Override

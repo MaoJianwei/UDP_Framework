@@ -52,7 +52,6 @@ public class App
 
         pool = Executors.newCachedThreadPool();
         pool.submit(new ReadMsgTask(queue));
-        pool.submit(new UdpServer(controller));
     }
 
     public void deactivate() {
@@ -60,7 +59,6 @@ public class App
         try {
             pool.awaitTermination(10, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
-            e.printStackTrace();
             System.out.println("App - deactivate - InterruptedException");
         }
 
@@ -103,7 +101,6 @@ public class App
                                 data.getDeviceId(), data.getMsgId(), data.getMsg()));
                     }
                 } catch (InterruptedException e) {
-                    System.out.println("ReadMsgTask - InterruptedException");
                     break;
                 } catch (Exception e) {
                     e.printStackTrace();
